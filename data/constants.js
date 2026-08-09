@@ -345,6 +345,25 @@ module.exports = {
   maxDeckNameLength: 25, // maxSetupNameLength
   maxCustomEmoteNameLength: 25,
   maxCustomStickerNameLength: 25,
+
+  // In-game player-list name cosmetics (not chat body)
+  nameFontOptions: [
+    "default",
+    "slab",
+    "mono",
+    "autophobia",
+    "spooky",
+    "nabla",
+  ],
+  animatedNameColorOptions: [
+    "none",
+    "pulse",
+    "glow",
+    "rainbow",
+    "patriotic",
+    "gradient",
+    "tricolor",
+  ],
   minDeckSize: 5, // minMafiaSetupTotal
   maxDeckSize: 50, // maxPlayers
   maxNameLengthInDeck: 20, // maxUserNameLength

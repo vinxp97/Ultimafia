@@ -509,6 +509,15 @@ export default function Game() {
                 data.users[i] && data.users[i].settings.customEmotes,
               customStickers:
                 data.users[i] && data.users[i].settings.customStickers,
+              nameFont: data.users[i] && data.users[i].settings.nameFont,
+              animatedNameColor:
+                data.users[i] && data.users[i].settings.animatedNameColor,
+              nameGradientColorA:
+                data.users[i] && data.users[i].settings.nameGradientColorA,
+              nameGradientColorB:
+                data.users[i] && data.users[i].settings.nameGradientColorB,
+              nameGradientColorC:
+                data.users[i] && data.users[i].settings.nameGradientColorC,
               left: data.left.indexOf(data.players[i]) !== -1,
             };
           }
@@ -525,6 +534,20 @@ export default function Game() {
                 data.spectatorsUsers[i] && data.spectatorsUsers[i].settings.customEmotes,
               customStickers:
                 data.spectatorsUsers[i] && data.spectatorsUsers[i].settings.customStickers,
+              nameFont:
+                data.spectatorsUsers[i] && data.spectatorsUsers[i].settings.nameFont,
+              animatedNameColor:
+                data.spectatorsUsers[i] &&
+                data.spectatorsUsers[i].settings.animatedNameColor,
+              nameGradientColorA:
+                data.spectatorsUsers[i] &&
+                data.spectatorsUsers[i].settings.nameGradientColorA,
+              nameGradientColorB:
+                data.spectatorsUsers[i] &&
+                data.spectatorsUsers[i].settings.nameGradientColorB,
+              nameGradientColorC:
+                data.spectatorsUsers[i] &&
+                data.spectatorsUsers[i].settings.nameGradientColorC,
               left: data.left.indexOf(data.spectators[i]) !== -1,
             };
           }
@@ -3373,6 +3396,11 @@ export function PlayerRows({ players, className = "", renderMarker, renderRowEnd
               ? player.nameColor
               : undefined
           }
+          nameFont={player.nameFont}
+          animatedNameColor={player.animatedNameColor}
+          nameGradientColorA={player.nameGradientColorA}
+          nameGradientColorB={player.nameGradientColorB}
+          nameGradientColorC={player.nameGradientColorC}
           active={activity.speaking[player.id]}
           noLink={stateViewing >= 0 && game.options.anonymousGame}
           includeMiniprofile
