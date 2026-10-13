@@ -14,6 +14,9 @@ import type { AudioEntry } from "./AudioManager";
 // ---------------------------------------------------------------------------
 // Core — loaded for every game
 // ---------------------------------------------------------------------------
+// Tracks are decoded at load time unless they are music, which is
+// decoded on first play instead -- see `preload` on AudioEntry. If you add a
+// short cue under music/, or a heavy file outside it, set `preload` explicitly.
 export const coreAudioConfig: AudioEntry[] = [
   { fileName: "bell", channel: "important" },
   { fileName: "ping" },

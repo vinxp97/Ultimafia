@@ -14,6 +14,7 @@ interface UseAudioReturn {
   loadAudioFiles: (entries: AudioEntry[]) => void;
   stopAudio: (audioName?: string) => void;
   stopAudios: (audioNames: string[]) => void;
+  playDeathSounds: (urls: string[], volume: () => number) => Promise<void>;
 }
 
 /**
@@ -34,6 +35,13 @@ export function useAudio(settings: AudioSettings): UseAudioReturn {
   }
 
   const manager = managerRef.current;
+
+  // Stop sources, cancel pending playback and release buffers on unmount.
+  useEffect(() => {
+    return () => {
+      manager.dispose();
+    };
+  }, [manager]);
 
   // --- Volume sync --------------------------------------------------------
   // Re-apply channel volumes whenever the sliders change or after new files
@@ -104,5 +112,10 @@ export function useAudio(settings: AudioSettings): UseAudioReturn {
     [manager]
   );
 
-  return { playAudio, loadAudioFiles, stopAudio, stopAudios };
+  const playDeathSounds = useCallback(
+    (urls: string[], volume: () => number) => manager.playUrls(urls, volume),
+    [manager]
+  );
+
+  return { playAudio, loadAudioFiles, stopAudio, stopAudios, playDeathSounds };
 }

@@ -9,7 +9,7 @@ import CustomMarkdown from "components/CustomMarkdown";
 import { VoteWidget } from "components/VoteWidget";
 import { EmoteReactions } from "components/EmoteReactions";
 import "css/emote-reactions.css";
-import { NameWithAvatar } from "../User/User";
+import { NameWithAvatar } from "../User/UserWidgets";
 
 import { Box, Divider, Grid, IconButton, Paper, Stack } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -90,7 +90,8 @@ export const Comment = (props) => {
                     (user.perms.deleteAnyPost ||
                       (user.perms.deleteOwnPost &&
                         comment.author.id === user.id) ||
-                      location === user.id) && (
+                      location === user.id ||
+                      props.canModerateLocation) && (
                       <IconButton onClick={onDeleteClick}>
                         <i className="fas fa-trash" />
                       </IconButton>

@@ -21,7 +21,7 @@ import { FamilyAvatarImage } from "utils/avatarUrl";
 import { useErrorAlert } from "components/Alerts";
 import { filterProfanity } from "components/Basic";
 import { TextEditor } from "components/Form";
-import { Avatar, NameWithAvatar, MediaEmbed } from "./User";
+import { Avatar, NameWithAvatar, MediaEmbed } from "./UserWidgets";
 import Comments from "../Community/Comments";
 import { Loading } from "components/Loading";
 import { useIsPhoneDevice } from "hooks/useIsPhoneDevice";
@@ -249,7 +249,11 @@ export default function Family() {
 
   const hasTrophySpotlight = family.perks?.some((p) => p.key === "trophySpotlight" && p.owned);
 
-  const membersList = family.members.map((member) => (
+  const rankOrder = { leader: 0, officer: 1, member: 2 };
+  const sortedMembers = [...family.members].sort(
+    (a, b) => (rankOrder[a.role] ?? 2) - (rankOrder[b.role] ?? 2)
+  );
+  const membersList = sortedMembers.map((member) => (
     <Box
       key={member.id}
       sx={{
@@ -477,7 +481,7 @@ export default function Family() {
                   px: 2,
                 }}
               >
-                <Comments fullWidth location={`family/${familyId}`} />
+                <Comments fullWidth location={`family/${familyId}`} canModerateLocation={!!family.isLeader} />
               </Box>
             )}
           </Stack>
@@ -558,7 +562,7 @@ export default function Family() {
         </Grid>
         {isPhoneDevice && (
           <Grid item xs={12} sx={{ mt: 1 }}>
-            <Comments fullWidth location={`family/${familyId}`} />
+            <Comments fullWidth location={`family/${familyId}`} canModerateLocation={!!family.isLeader} />
           </Grid>
         )}
       </Grid>

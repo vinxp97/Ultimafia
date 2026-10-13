@@ -1,9 +1,4 @@
-/**
- * AudioManager — imperative wrapper around HTMLAudioElement instances.
- *
- * Manages loading, playing, pausing and per-channel volume for all in-game
- * audio.
- */
+import WebAudioSound from "./WebAudioSound";
 
 export type AudioChannel = "sfx" | "music" | "pregameMusic" | "important";
 
@@ -13,181 +8,126 @@ export interface AudioEntry {
   volume?: number;
   overrides?: boolean;
   channel?: AudioChannel;
+  /** Buffer short cues ahead of playback. Long music loads on demand. */
+  preload?: boolean;
 }
 
 export interface LoadedTrack {
-  el: HTMLAudioElement;
+  sound: WebAudioSound;
+  fileName: string;
+  loop: boolean;
   volume: number;
   overrides: boolean;
   channel: AudioChannel;
+  preload: boolean;
 }
 
 export default class AudioManager {
   tracks: Record<string, LoadedTrack> = {};
+  private transientSounds = new Set<WebAudioSound>();
+  private generation = 0;
+  private volumes: Record<AudioChannel, number> = {
+    sfx: 1, music: 1, pregameMusic: 1, important: 1,
+  };
 
-  constructor() {
-    // Without this, iOS Safari treats every HTMLAudioElement as exclusive
-    // "playback" audio and pauses other tabs' media (YouTube, Spotify, etc.)
-    // when we play a UI sound — e.g. the ready-check ping silencing a video
-    // the user was watching. "ambient" lets our sounds mix in instead.
-    const nav = navigator as Navigator & {
-      audioSession?: { type?: string };
-    };
-    if (nav.audioSession) {
-      try {
-        nav.audioSession.type = "ambient";
-      } catch {}
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  /** Infer a default channel from a filename when none is provided. */
   static inferChannel(fileName: string): AudioChannel {
     if (fileName.includes("music/Pregame")) return "pregameMusic";
     if (fileName.includes("music")) return "music";
     return "sfx";
   }
 
-  /** Clamp a number to [0, 1], returning `fallback` for non-finite input. */
-  static clamp(value: unknown, fallback: number = 1): number {
+  static clamp(value: unknown, fallback = 1): number {
     const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return fallback;
-    if (parsed < 0) return 0;
-    if (parsed > 1) return 1;
-    return parsed;
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : fallback;
   }
 
-  // ---------------------------------------------------------------------------
-  // Loading
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Load (or reload) a set of audio entries.
-   *
-   * If the file was already loaded its element is reused (paused first so loop
-   * changes apply).
-   */
   load(entries: AudioEntry[]): void {
-    if (!Array.isArray(entries) || entries.length === 0) return;
-
+    if (!Array.isArray(entries)) return;
     for (const entry of entries) {
-      const {
-        fileName,
-        loop = false,
-        volume = 1,
-        overrides = false,
-        channel,
-      } = entry;
-
-      if (!fileName) continue;
-
-      const existing = this.tracks[fileName];
-      if (!existing) {
-        const el = new Audio(`/audio/${fileName}.mp3`);
-        el.load();
-        el.loop = loop;
-        this.tracks[fileName] = {
-          el,
-          volume,
-          overrides,
-          channel: channel || AudioManager.inferChannel(fileName),
-        };
-      } else {
-        // Pause before changing loop to make sure the change applies.
-        existing.el.pause();
-        existing.el.loop = loop;
-        existing.volume = volume;
-        existing.overrides = overrides;
-        existing.channel = channel || AudioManager.inferChannel(fileName);
+      if (!entry.fileName) continue;
+      const channel = entry.channel || AudioManager.inferChannel(entry.fileName);
+      const preload = entry.preload ?? (channel !== "music" && channel !== "pregameMusic");
+      const existing = this.tracks[entry.fileName];
+      existing?.sound.stop();
+      const sound = existing && existing.preload === preload
+        ? existing.sound
+        : new WebAudioSound(`/audio/${entry.fileName}.mp3`, preload);
+      if (existing && existing.sound !== sound) existing.sound.dispose();
+      const track: LoadedTrack = {
+        fileName: entry.fileName,
+        loop: entry.loop ?? false,
+        volume: AudioManager.clamp(entry.volume),
+        overrides: entry.overrides ?? false,
+        channel, preload, sound,
+      };
+      this.tracks[entry.fileName] = track;
+      sound.volume = track.volume * this.volumes[channel];
+      if (preload) {
+        try { void sound.preload().catch(() => {}); } catch {}
       }
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Playback
-  // ---------------------------------------------------------------------------
-
-  /** Play a single audio file by name.  Pauses other overriding tracks first. */
   play(audioName: string): void {
     const track = this.tracks[audioName];
     if (!track) return;
-
-    // If this file is marked as overriding, pause all other override tracks.
     if (track.overrides) {
-      for (const name in this.tracks) {
-        if (this.tracks[name].overrides) {
-          this.tracks[name].el.pause();
-        }
+      for (const other of Object.values(this.tracks)) {
+        if (other.overrides) other.sound.stop();
       }
     }
-
-    track.el.currentTime = 0;
-    track.el.play().catch(() => {});
+    try { void track.sound.play(track.loop).catch(() => {}); } catch {}
   }
 
-  /**
-   * Stop a single audio file, or *all* audio files when called without an
-   * argument.
-   */
   stop(audioName?: string): void {
-    if (audioName != null) {
-      const track = this.tracks[audioName];
-      if (track) track.el.pause();
-    } else {
-      for (const name in this.tracks) {
-        if (this.tracks[name].channel === "important") continue;
-        this.tracks[name].el.pause();
+    if (audioName != null) this.tracks[audioName]?.sound.stop();
+    else {
+      for (const track of Object.values(this.tracks)) {
+        if (track.channel !== "important") track.sound.stop();
       }
     }
   }
 
-  /** Stop a list of audio files by name. */
   stopMany(audioNames: string[]): void {
-    if (!Array.isArray(audioNames)) return;
-    for (const name of audioNames) {
-      const track = this.tracks[name];
-      if (track) track.el.pause();
+    if (Array.isArray(audioNames)) audioNames.forEach((name) => this.stop(name));
+  }
+
+  async playUrls(urls: string[], volume: () => number): Promise<void> {
+    const generation = this.generation;
+    for (const url of urls) {
+      if (generation !== this.generation) return;
+      if (typeof url !== "string" || !url.length) continue;
+      const sound = new WebAudioSound(url, false);
+      sound.volume = volume();
+      this.transientSounds.add(sound);
+      // Invalid files or suspended mobile playback must not stall the queue.
+      const timeout = setTimeout(() => sound.dispose(), 6000);
+      try { await sound.play(); } catch {}
+      finally {
+        clearTimeout(timeout);
+        sound.dispose();
+        this.transientSounds.delete(sound);
+      }
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Volume
-  // ---------------------------------------------------------------------------
+  dispose(): void {
+    this.generation++;
+    for (const track of Object.values(this.tracks)) track.sound.dispose();
+    for (const sound of this.transientSounds) sound.dispose();
+    this.transientSounds.clear();
+    this.tracks = {};
+  }
 
-  /**
-   * Synchronise every loaded element's actual volume with the current slider
-   * values.
-   */
-  syncVolume(
-    sfxVolume: number,
-    musicVolume: number,
-    pregameMusicVolume: number,
-    importantVolume: number
-  ): void {
-    const _sfxVolume = AudioManager.clamp(sfxVolume);
-    const _musicVolume = AudioManager.clamp(musicVolume);
-    const _pregameMusicVolume = AudioManager.clamp(pregameMusicVolume);
-    const _importantVolume = AudioManager.clamp(importantVolume);
-
-    for (const name in this.tracks) {
-      const { el, volume, channel } = this.tracks[name];
-
-      const slider =
-        channel === "music"
-          ? _musicVolume
-          : channel === "pregameMusic"
-            ? _pregameMusicVolume
-            : channel === "important"
-              ? _importantVolume
-              : _sfxVolume;
-      el.volume = volume * slider;
+  syncVolume(sfx: number, music: number, pregameMusic: number, important: number): void {
+    this.volumes = {
+      sfx: AudioManager.clamp(sfx), music: AudioManager.clamp(music),
+      pregameMusic: AudioManager.clamp(pregameMusic), important: AudioManager.clamp(important),
+    };
+    for (const track of Object.values(this.tracks)) {
+      track.sound.volume = track.volume * this.volumes[track.channel];
     }
   }
 
-  get loadedNames(): string[] {
-    return Object.keys(this.tracks);
-  }
+  get loadedNames(): string[] { return Object.keys(this.tracks); }
 }

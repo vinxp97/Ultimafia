@@ -17,6 +17,7 @@ import { AlertList, useErrorAlert } from "./components/Alerts";
 import { Nav } from "./components/Nav";
 import UserNavSection from "./pages/User/UserNavSection";
 import CookieBanner from "./components/CookieBanner";
+import LeaveGameDialog from "./components/LeaveGameDialog";
 import NavDropdown from "./components/NavDropdown";
 import { Loading } from "./components/Loading";
 import "css/main.css";
@@ -93,6 +94,21 @@ function ErrorFallbackNoMain({ error, resetErrorBoundary }) {
   return <ErrorBox error={error} resetErrorBoundary={resetErrorBoundary} />;
 }
 
+// Route components must be created once, at module scope. Calling lazy()
+// inside Main gave every route a new component type on each Main render, so
+// any Main state change (e.g. crossing the md breakpoint on resize/rotation,
+// theme change) unmounted and remounted the whole page: its API calls re-ran
+// and the game page reconnected its socket.
+const Game = lazyWithRetry(() => import("pages/Game/Game"));
+const Play = lazyWithRetry(() => import("pages/Play/Play"));
+const Community = lazyWithRetry(() => import("pages/Community/Community"));
+const Fame = lazyWithRetry(() => import("pages/Fame/Fame"));
+const Learn = lazyWithRetry(() => import("pages/Learn/Learn"));
+const Policy = lazyWithRetry(() => import("pages/Policy/Policy"));
+const SiteActivity = lazyWithRetry(() => import("pages/Activity/Activity"));
+const User = lazyWithRetry(() => import("pages/User/User"));
+const Welcome = lazyWithRetry(() => import("pages/Welcome/Welcome"));
+
 function Main(props) {
   const errorContent = props.errorContent;
 
@@ -109,16 +125,6 @@ function Main(props) {
   useEffect(() => {
     clearChunkReloadFlag();
   }, []);
-
-  const Game = lazyWithRetry(() => import("pages/Game/Game"));
-  const Play = lazyWithRetry(() => import("pages/Play/Play"));
-  const Community = lazyWithRetry(() => import("pages/Community/Community"));
-  const Fame = lazyWithRetry(() => import("pages/Fame/Fame"));
-  const Learn = lazyWithRetry(() => import("pages/Learn/Learn"));
-  const Policy = lazyWithRetry(() => import("pages/Policy/Policy"));
-  const SiteActivity = lazyWithRetry(() => import("pages/Activity/Activity"));
-  const User = lazyWithRetry(() => import("pages/User/User"));
-  const Welcome = lazyWithRetry(() => import("pages/Welcome/Welcome"));
 
   const siteContent = (
     <Stack sx={{
@@ -428,8 +434,14 @@ function Header({ setShowAnnouncementTemporarily }) {
 function InGameWarning() {
   const user = useContext(UserContext);
   const errorAlert = useErrorAlert();
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setLeaveDialogOpen(false);
+  }, [user.inGame]);
 
   function onGameLeave() {
+    setLeaveDialogOpen(false);
     axios
       .post("/api/game/leave")
       .then(() => {
@@ -439,36 +451,44 @@ function InGameWarning() {
   }
 
   return (
-    <Snackbar
-      open={user.inGame !== null}
-      sx={{ maxWidth: "calc(100vw - 16px)" }}
-    >
-      <Alert
-        severity="warning"
-        variant="outlined"
-        sx={{
-          width: "100%",
-          backgroundColor: "background.paper",
-        }}
-        slotProps={{
-          message: {
-            sx: {
-              flex: "1",
-            },
-          },
-        }}
+    <>
+      <Snackbar
+        open={user.inGame !== null}
+        sx={{ maxWidth: "calc(100vw - 16px)" }}
       >
-        <AlertTitle>You are in a game in progress.</AlertTitle>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Button href={`/game/${user.inGame}`} size="small" sx={{ flex: "1" }}>
-            Return
-          </Button>
-          <Button onClick={() => onGameLeave()} size="small" sx={{ flex: "1" }}>
-            Leave
-          </Button>
-        </Stack>
-      </Alert>
-    </Snackbar>
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{
+            width: "100%",
+            backgroundColor: "background.paper",
+          }}
+          slotProps={{
+            message: {
+              sx: {
+                flex: "1",
+              },
+            },
+          }}
+        >
+          <AlertTitle>You are in a game in progress.</AlertTitle>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button href={`/game/${user.inGame}`} size="small" sx={{ flex: "1" }}>
+              Return
+            </Button>
+            <Button onClick={() => setLeaveDialogOpen(true)} size="small" sx={{ flex: "1" }}>
+              Leave
+            </Button>
+          </Stack>
+        </Alert>
+      </Snackbar>
+      <LeaveGameDialog
+        open={leaveDialogOpen && user.inGame !== null}
+        onClose={() => setLeaveDialogOpen(false)}
+        onConfirm={onGameLeave}
+        warningMessage="Leaving while your participation is still required may result in a penalty."
+      />
+    </>
   );
 }
 
@@ -501,13 +521,10 @@ function useUnreadNotifications() {
 
   function getNotifs() {
     axios
-      .get("/api/notifs")
+      .get("/api/notifs/unreadCount")
       .then((res) => {
-        var nextRestart = res.data[0];
-        var notifs = res.data.slice(1);
-
-        setNextRestart(nextRestart);
-        setUnreadCount(notifs.length);
+        setNextRestart(res.data.nextRestart);
+        setUnreadCount(res.data.count);
       })
       .catch(() => {});
   }

@@ -13,6 +13,7 @@ const { removeSpaces } = require("./core/Utils");
 const publisher = redis.client.duplicate();
 const axios = require("axios");
 const gameContext = require("../modules/gameContext");
+const pushNotifications = require("../modules/pushNotifications");
 
 const serverId = Number(process.env.NODE_APP_INSTANCE) || 0;
 const port = Number(process.env.GAME_PORT || "3010") + serverId;
@@ -210,6 +211,31 @@ var deprecated = false;
           }
         });
 
+        // Push subscription for the "game is starting" notification. It rides the
+        // game socket rather than an HTTP route because the notification is sent
+        // from this process, so the subscription may as well live here -- no
+        // cross-process lookup, nothing to persist.
+        socket.on("pushSubscribe", (subscription) => {
+          try {
+            if (!user || !user.id || user.guestId) return;
+
+            const accepted = pushNotifications.register(user.id, subscription);
+            socket.send("pushSubscribeResult", { accepted });
+          } catch (e) {
+            logger.error(e);
+          }
+        });
+
+        socket.on("pushUnsubscribe", (info) => {
+          try {
+            if (!user || !user.id) return;
+
+            pushNotifications.unregister(user.id, info && info.endpoint);
+          } catch (e) {
+            logger.error(e);
+          }
+        });
+
         // The main server authenticating as a server
         socket.on("authAsServer", async (token) => {
           try {
@@ -288,6 +314,26 @@ var deprecated = false;
               userId: data.userId,
               error: e.message,
             });
+          }
+        });
+
+        // The main server telling us a finished game was rehosted
+        socket.on("gameRehosted", async (data) => {
+          try {
+            if (!socket.isServer)
+              throw new Error("Not authenticated as server.");
+
+            const game = games[String(data.gameId)];
+            if (!game) return; // everyone already left
+
+            game.announceRehost({
+              gameId: String(data.newGameId),
+              hostId: data.hostId ? String(data.hostId) : null,
+              hostName: data.hostName ? String(data.hostName) : null,
+              setup: data.setup && typeof data.setup == "object" ? data.setup : null,
+            });
+          } catch (e) {
+            logger.error(e);
           }
         });
 
