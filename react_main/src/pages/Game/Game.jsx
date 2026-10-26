@@ -146,8 +146,10 @@ import { releaseSubscription } from "utils/pushNotifications";
 import {
   buildReplyPayload,
   canReplyTo,
+  describeQuotedMessage,
   handleGameEscape,
   makeReplyTarget,
+  pairReplies,
   showPinButton,
 } from "utils/messageReply";
 import RoleMarkerToggle from "./components/RoleMarkerToggle";
@@ -2338,7 +2340,8 @@ export function TextMeetingLayout({ seatActions = true } = {}) {
     }
 
     var previousMessage = null;
-    return messageData.map((message, i) => {
+    // A reply and the quote right above it are drawn as one row.
+    return pairReplies(messageData).map(({ message, replyQuote }, i) => {
       const isNotServerMessage = message.senderId !== "server";
       const unfocusedMessage =
         isolationEnabled &&
@@ -2373,6 +2376,7 @@ export function TextMeetingLayout({ seatActions = true } = {}) {
           settings={settings}
           unfocusedMessage={unfocusedMessage}
           chainToPrevious={chainToPrevious}
+          replyQuote={replyQuote}
         />
       );
     });
@@ -2802,8 +2806,25 @@ export function rowStateClass(stateViewing) {
 }
 
 function Message(props) {
-  const { history, isMessagePinned, meetingState, ...rowProps } = props;
+  const { history, isMessagePinned, meetingState, replyQuote, ...rowProps } =
+    props;
   const { message, stateViewing } = props;
+  // The quoted line shown inside a reply row (see pairReplies).
+  const replyQuoteState = replyQuote
+    ? history.states[replyQuote.fromState]
+    : undefined;
+  const replyPreview = useMemo(
+    () =>
+      replyQuote
+        ? describeQuotedMessage(
+            replyQuote,
+            replyQuoteState,
+            props.players,
+            props.spectators
+          )
+        : null,
+    [replyQuote, replyQuoteState, props.players, props.spectators]
+  );
   if (message.obituaries && props.settings.legacyObituaries) {
     return legacyObituaryMessages(message).map((alert) => (
       <Message
@@ -2822,6 +2843,7 @@ function Message(props) {
     <MessageRow
       {...rowProps}
       pinned={isMessagePinned(message)}
+      replyPreview={replyPreview || undefined}
       meetingName={history.states[nameState]?.meetings?.[message.meetingId]?.name}
       quoteState={message.isQuote ? history.states[message.fromState] : undefined}
       history={message.obituaries || message.winners ? history : undefined}
@@ -3110,7 +3132,10 @@ const MessageRow = React.memo(function MessageRow(props) {
       className={
         "message" +
         (message.spectatorChat ? " spectator-chat" : "") +
-        (message.replyTo && !message.isQuote ? " reply-message" : "")
+        (message.replyTo && !message.isQuote && !props.replyPreview
+          ? " reply-message"
+          : "") +
+        (props.replyPreview ? " reply-merged" : "")
       }
       onDoubleClick={() => props.onMessageQuote(message)}
       style={messageStyle}
@@ -3183,7 +3208,33 @@ const MessageRow = React.memo(function MessageRow(props) {
         >
           {!message.isQuote && (
             <>
-              {message.replyTo && (
+              {props.replyPreview && (
+                <span
+                  className="reply-quote-preview"
+                  title="Replying to this message"
+                >
+                  <span className="quote-info">
+                    {`${props.replyPreview.senderName} on ${props.replyPreview.fromStateName}: `}
+                  </span>
+                  <span className="quote-content">
+                    <UserText
+                      text={props.replyPreview.content}
+                      settings={user.settings}
+                      players={players}
+                      spectators={spectators}
+                      customEmotes={props.replyPreview.customEmotes}
+                      customStickers={props.replyPreview.customStickers}
+                      filterProfanity
+                      linkify
+                      emotify
+                      slangifySeed={String(props.replyPreview.time)}
+                      iconUsername
+                      roleify={props.settings.roleMentions}
+                    />
+                  </span>
+                </span>
+              )}
+              {message.replyTo && !props.replyPreview && (
                 <i
                   className="fas fa-reply fa-rotate-180 reply-marker"
                   title="Reply to the quote above"
